@@ -1,6 +1,9 @@
 {Schema} = mongoose = require "../mongoose"
 
-VersionLocaleMetadataSchema = new Schema
+VersionMetadataSchema = new Schema
+	country:
+		type: String
+
 	name:
 		type: String
 		required: true
@@ -13,6 +16,7 @@ VersionSchema = new Schema
 	number:
 		type: String
 		required: true
+	metadata: [VersionMetadataSchema]
 
 AppSchema = new Schema
 	bundleId:
