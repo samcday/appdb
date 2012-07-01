@@ -5,5 +5,11 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "license": "BSD"
+  "license": "BSD",
+  "dependencies": {
+    "mongoose": "~2.7.1",
+    "express": "~2.5.11",
+    "async": "~0.1.22",
+    "mongoose-types": "~1.0.3"
+  }
 }
