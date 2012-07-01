@@ -17,6 +17,33 @@ VersionSchema = new Schema
 		type: String
 		required: true
 	metadata: [VersionMetadataSchema]
+	fileSize:
+		type: Number
+	cydia:
+		repositories:
+			type: [Schema.ObjectId]
+			ref: "CydiaRepository"
+		conflicts:
+			type: [String]
+		replaces:
+			type: [String]
+		section:
+			type: String
+		maintainer:
+			name:
+				type: String
+			email:
+				type: String
+		author:
+			name:
+				type: String
+			email:
+				type: String
+		sponsor:
+			name:
+				type: String
+			url:
+				type: String
 
 AppSchema = new Schema
 	bundleId:
