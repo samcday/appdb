@@ -1,49 +1,13 @@
+{useTimestamps} = require "mongoose-types"
 {Schema} = mongoose = require "../mongoose"
 
-VersionMetadataSchema = new Schema
-	country:
-		type: String
-
-	name:
-		type: String
-		required: true
-	description:
-		type: String
-	whatsNew:
-		type: String
-
 VersionSchema = new Schema
-	number:
+	plistJson:
 		type: String
-		required: true
-	metadata: [VersionMetadataSchema]
-	fileSize:
-		type: Number
-	cydia:
-		repositories:
-			type: [Schema.ObjectId]
-			ref: "CydiaRepository"
-		conflicts:
-			type: [String]
-		replaces:
-			type: [String]
-		section:
-			type: String
-		maintainer:
-			name:
-				type: String
-			email:
-				type: String
-		author:
-			name:
-				type: String
-			email:
-				type: String
-		sponsor:
-			name:
-				type: String
-			url:
-				type: String
+		select: false
+
+VersionSchema.virtual("plist")
+	.get -> return if this.plistJson then JSON.parse this.plistJson else null
 
 AppSchema = new Schema
 	bundleId:
@@ -65,7 +29,12 @@ AppSchema = new Schema
 	versions:
 		type: [VersionSchema]
 	itunes:
-		appId:
-			type: Number
+		type: Schema.ObjectId
+		ref: "ItunesApp"
+	cydia:
+		type: Schema.ObjectId
+		ref: "CydiaPackage"
+
+AppSchema.plugin useTimestamps
 
 module.exports = mongoose.model "App", AppSchema

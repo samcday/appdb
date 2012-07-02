@@ -3,10 +3,10 @@ path = require "path"
 
 json = fs.requireFileSync path.join __dirname, "..", "util", "iso3166-slim2.json"
 
-module.exports.countries = countries = {}
-countries[country["alpha-2"]] = country for country in json
+module.exports.countries = Countries = {}
+Countries[country["alpha-2"]] = country for country in json
 
-module.exports.itunesCountries = [
+Countries.itunesCountries = [
 	"AE", "AG", "AI", "AL", "AM", "AO", "AR", "AT", "AU", "AZ", "BB", "BE",
 	"BF", "BG", "BH", "BJ", "BM", "BN", "BO", "BR", "BS", "BT", "BW", "BY",
 	"BZ", "CA", "CD", "CH", "CL", "CN", "CO", "CR", "CV", "CY", "CZ", "DE",
