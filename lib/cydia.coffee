@@ -1,16 +1,16 @@
 _ = require "underscore"
+domain = require "domain"
 request = require "request"
 async = require "async"
 humanize = require "humanize"
 url = require "url"
 zlib = require "zlib"
 {WritableStreamBuffer} = require "stream-buffers"
-{wrapCallback} = util = require "./util"
 redis = require "./redis"
 
 CydiaRepository = require "./model/CydiaRepository"
 
-indexLineRegex = /(.+?)\:\s?(.*)/
+controlLineRegex = /(.+?)\:\s?(.*)/
 
 parseControlFile = (raw) ->
 	lines = raw.trim().split "\n"
@@ -25,7 +25,7 @@ parseControlFile = (raw) ->
 		if line[0] is " "
 			currentObj[prevKey] += line
 			continue
-		matches = indexLineRegex.exec line
+		matches = controlLineRegex.exec line
 		continue unless matches
 		[key, value] = matches.slice 1
 		prevKey = key.toLowerCase()
@@ -85,7 +85,7 @@ Cydia.getPackages = (job, repo, cb) ->
 		packageBuffer.on "close", ->
 			cb null, parseControlFile packageBuffer.getContentsAsString()
 
-Cydia.processRepository = (job, cb) ->
+Cydia.processRepository = (repo, cb) ->
 	CydiaRepository.findById job.data.repo, wrapCallback cb, (repo) ->
 		return cb new Error "Couldn't find Repository!" unless repo
 
@@ -108,6 +108,14 @@ Cydia.processRepository = (job, cb) ->
 			job.log "Completed crawl of this Repository."
 			repo.lastCrawled = new Date()
 			repo.save cb
+
+module.exports.CydiaCrawler = class CydiaCrawler extends process.EventEmitter
+	constructor: (@log, repoId) ->
+		@dom = domain.create()
+		@dom.on "error", (err) =>
+			@emit "error", err
+		CydiaRepository.findById repoId, @dom.intercept (repo) ->
+			console.log repo
 
 ###
 
