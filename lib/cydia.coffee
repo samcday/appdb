@@ -1,67 +1,62 @@
 _ = require "underscore"
+BufferStream = require "bufferstream"
 domain = require "domain"
 request = require "request"
 async = require "async"
 humanize = require "humanize"
 url = require "url"
 zlib = require "zlib"
+ControlParser = require "debian-control-parser"
 {WritableStreamBuffer} = require "stream-buffers"
+{wrapCallback} = util = require "./util"
 redis = require "./redis"
 
 CydiaRepository = require "./model/CydiaRepository"
 
-controlLineRegex = /(.+?)\:\s?(.*)/
-
-parseControlFile = (raw) ->
-	lines = raw.trim().split "\n"
-	result = []
-	currentObj = null
-	prevKey = ""
-	for line in lines
-		unless line
-			currentObj = null 
-			continue
-		result.push currentObj = {} unless currentObj
-		if line[0] is " "
-			currentObj[prevKey] += line
-			continue
-		matches = controlLineRegex.exec line
-		continue unless matches
-		[key, value] = matches.slice 1
-		prevKey = key.toLowerCase()
-		currentObj[key.toLowerCase()] = value
-	return result
-
 module.exports = Cydia = {}
 
+get = (url, allow404 = false) ->
+	stream = request.get url
+	stream.on "response", (response) ->
+		return if response.statusCode is 200
+		return if response.statusCode is 404 and allow404
+		stream.emit "error", new Error "Response returned status #{response.statusCode}"
+	return stream
+
+buildRepoBaseUrl = (repo) ->
+	baseUrl = repo.url
+	url = url.resolve url, "dists/#{repo.distribution}/" unless repo.distribution is "./"
+	return baseUrl
+
 Cydia.getRelease = (repo, cb) ->
-	releaseUrl = repo.url
-	unless repo.distribution is "./"
-		releaseUrl = url.resolve releaseUrl, "dists/#{repo.distribution}/"
-	releaseUrl = url.resolve releaseUrl, "Release"
+	releaseUrl = url.resolve buildRepoBaseUrl, "Release"
+	control = ControlParser get releaseUrl, true
+	releaseStanza = null
+	control.once "stanza", (stanza) -> releaseStanza = stanza
+	control.on "done", -> cb null, releaseStanza
 
-	request.get releaseUrl, (err, resp, body) ->
-		return cb() unless resp.statusCode is 200
-		cb null, parseControlFile body
+buildPackagesUrl = (repo) ->
+	packagesUrl = buildRepoBaseUrl()
+	packagesUrl = url.resolve packagesUrl, "#{repo.components[0]}/binary-iphoneos-arm/" unless repo.distribution is "./"
+	return packagesUrl
 
-Cydia.getPackages = (job, repo, cb) ->
-	packagesUrl = repo.url
-	unless repo.distribution is "./"
-		packagesUrl = url.resolve packagesUrl, "dists/#{repo.distribution}/#{repo.components[0]}/binary-iphoneos-arm/"
-	packagesUrl = url.resolve packagesUrl, "Packages"
-
+findPackageFile = (base, cb) ->
 	packagesUrls = [
 		"#{packagesUrl}.bz2"
 		"#{packagesUrl}.gz"
 		packagesUrl
 	]
-
 	headPackage = (url, cb) ->
 		request.head url, (err, resp, body) ->
 			cb if err then false else resp.statusCode is 200
-
 	async.detectSeries packagesUrls, headPackage, (url) ->
 		return cb new Error "Couldn't find Packages!" unless url
+		cb null, url
+
+Cydia.getPackages = (job, repo, cb) ->
+	packagesUrl = url.resolve buildPackagesUrl, "Packages"
+
+	findPackageFile packagesUrl, wrapCallback cb, (url) ->
 		stream = request.get url
 
 		streamSize = 0
@@ -89,33 +84,36 @@ Cydia.processRepository = (repo, cb) ->
 	CydiaRepository.findById job.data.repo, wrapCallback cb, (repo) ->
 		return cb new Error "Couldn't find Repository!" unless repo
 
-		async.parallel [
-			(cb) ->
-				getRelease repo, wrapCallback cb, (release) ->
-					return cb() unless release
-					release = release[0]
-					job.log "Found Release file. Updating DB."
-					repo.label = release.label
-					repo.description = release.description
-					repo.save cb
-			(cb) ->
-				getPackages job, repo, wrapCallback cb, (packages) ->
-					job.log "#{packages.length} packages in this repo."
-					savePackage = (cydiaPackage, cb) ->
-						redis.hset "cydia:packages", "#{cydiaPackage.package}", repo._id, cb
-					async.forEachSeries packages, savePackage, cb
-		], (err) ->
-			job.log "Completed crawl of this Repository."
-			repo.lastCrawled = new Date()
-			repo.save cb
-
 module.exports.CydiaCrawler = class CydiaCrawler extends process.EventEmitter
 	constructor: (@log, repoId) ->
 		@dom = domain.create()
 		@dom.on "error", (err) =>
 			@emit "error", err
-		CydiaRepository.findById repoId, @dom.intercept (repo) ->
-			console.log repo
+		CydiaRepository.findById repoId, @dom.intercept (repo) =>
+			async.parallel [
+				(cb) ->
+					Cydia.getRelease repo, wrapCallback cb, (release) ->
+						return cb() unless release
+						console.log release
+						return
+						release = release[0]
+						repo.label = release.label
+						repo.description = release.description
+						repo.save cb
+					###
+					(cb) ->
+						getPackages job, repo, wrapCallback cb, (packages) ->
+							@emit "start", packages.length
+							savePackage = (cydiaPackage, cb) ->
+								# redis.hset "cydia:packages", "#{cydiaPackage.package}", repo._id, cb
+								@emit "package", cydiaPackage
+							async.forEachSeries packages, savePackage, cb
+					###
+			], @dom.intercept ->
+				return
+				repo.lastSuccessfulCrawl = new Date()
+				repo.save @dom.intercept ->
+					@emit "complete"
 
 ###
 
