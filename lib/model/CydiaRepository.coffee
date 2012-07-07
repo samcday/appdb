@@ -1,4 +1,4 @@
-{useTimestamps} = require "mongoose-types"
+{timestamp} = require "mongoose-troop"
 {Schema} = mongoose = require "../mongoose"
 
 CydiaRepositorySchema = new Schema
@@ -15,6 +15,6 @@ CydiaRepositorySchema = new Schema
 	lastSuccessfulCrawl:
 		type: Date
 
-CydiaRepositorySchema.plugin useTimestamps
+CydiaRepositorySchema.plugin timestamp
 
 module.exports = mongoose.model "CydiaRepository", CydiaRepositorySchema

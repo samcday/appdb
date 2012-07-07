@@ -17,7 +17,7 @@ util.safeJSONParse = (str, cb) ->
 		cb new Error "JSON parse error"
 
 dummy = () ->
-util.wrapCallback = wrapCallback = (cb, next) ->
+util.wrap = util.wrapCallback = wrapCallback = (cb, next) ->
 	return (err) ->
 		if err?
 			return cb.emit "error", err if cb instanceof EventEmitter
