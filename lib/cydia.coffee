@@ -95,6 +95,7 @@ Cydia.getPackages = (repo, cb) ->
 		out = if /bz2$/.test url then stream.pipe new util.bunzip2 else
 			if /gz$/.test url then stream.pipe zlib.createGzip()
 			else stream
+		out.setEncoding "utf8"
 		stream.on "response", (response) ->
 			streamSize = response.headers["content-length"]
 			return unless streamSize
@@ -129,22 +130,46 @@ module.exports.CydiaCrawler = class CydiaCrawler extends process.EventEmitter
 		repo = @repo
 		Cydia.getPackages repo, wrap cb, (stream) =>
 			@emit "start"
+
 			q = async.queue (job, cb) ->
 				Cydia.processPackage job.data, repo, cb
 			, 10
 
-			control = ControlParser stream
-			control.on "stanza", (stanza) =>
-				q.push {data: stanza}, (err, pkg) =>
+			packagesDom = domain.create()
+
+			packagesDom.add stream
+			packagesDom.on "error", (err) =>
+				q.tasks = []
+				q.concurrency = 0
+				control.removeListener "stanza", stanzaHandler
+				packagesDom.dispose()
+				@emit "error", err
+
+			control = null
+			totalStanzas = 0
+			processed = 0
+			foundAllStanzas = false
+			stanzaHandler = (stanza) =>
+				totalStanzas++
+				q.push { data: stanza }, (err, pkg) =>
 					# TODO: log errors.
-					console.error err if err?
+					#console.error err if err?
+					if err
+						console.log "failed.", stanza
+						console.error err
+						err.pkg = pkg
+						throw err
 					return if err?
-					@emit "package", pkg
-			control.on "done", =>
-				# Wait for the queue to finish if necessary.
-				if q.running() then q.drain = cb else cb()
-			stream.on "download", (done, total) =>
-				@emit "download", done, total
+					@emit "package", pkg, ++processed, if foundAllStanzas then totalStanzas else 0
+			packagesDom.run =>
+				control = ControlParser stream
+				control.on "stanza", stanzaHandler
+				control.on "done", =>
+					foundAllStanzas = true
+					# Wait for the queue to finish if necessary.
+					if q.running() then q.drain = cb else cb()
+				stream.on "download", (done, total) =>
+					@emit "download", done, total
 ###
 
 Cydia.queueCrawl = ->

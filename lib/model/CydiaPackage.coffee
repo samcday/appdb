@@ -41,9 +41,10 @@ VersionSchema = new Schema
 		type: Number
 
 VersionSchema.method "addRepo", (repo) ->
-	return if this.repositories and this.repositories.indexOf repo._id
-	this.repositories ?= []
-	this.repositories.push repo
+	for repoId in @repositories
+		return if repoId.equals repo._id
+	@repositories ?= []
+	@repositories.push repo
 
 VersionSchema.plugin timestamps
 
