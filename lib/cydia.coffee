@@ -40,13 +40,6 @@ buildRepoBaseUrl = (repo) ->
 	baseUrl = url.resolve baseUrl, "dists/#{repo.distribution}/" unless repo.distribution is "./"
 	return baseUrl
 
-Cydia.getRelease = (repo, cb) ->
-	releaseUrl = url.resolve buildRepoBaseUrl(repo), "Release"
-	control = ControlParser get releaseUrl, true
-	releaseStanza = null
-	control.once "stanza", (stanza) -> releaseStanza = stanza
-	control.on "done", -> cb null, releaseStanza
-
 buildPackagesUrl = (repo) ->
 	packagesUrl = buildRepoBaseUrl(repo)
 	packagesUrl = url.resolve packagesUrl, "#{repo.components[0]}/binary-iphoneos-arm/" unless repo.distribution is "./"
@@ -87,10 +80,11 @@ Cydia.processPackage = (packageData, repo, cb) ->
 		pkg.save wrap cb, ->
 			cb null, pkg
 
-Cydia.getPackages = (repo, cb) ->
+Cydia.getPackages = (logger, repo, cb) ->
 	packagesUrl = url.resolve buildPackagesUrl(repo), "Packages"
-
+	logger.debug "Looking for Packages using base #{packagesUrl}"
 	findPackageFile packagesUrl, wrap cb, (url) ->
+		logger.info "Found Packages @ #{url}. Downloading."
 		stream = get url
 		out = if /bz2$/.test url then stream.pipe new util.bunzip2 else
 			if /gz$/.test url then stream.pipe zlib.createGzip()
@@ -105,7 +99,7 @@ Cydia.getPackages = (repo, cb) ->
 		cb null, out
 
 module.exports.CydiaCrawler = class CydiaCrawler extends process.EventEmitter
-	constructor: (@log, repoId) ->
+	constructor: (@logger, repoId) ->
 		@dom = domain.create()
 		@dom.on "error", (err) =>
 			@emit "error", err
@@ -121,17 +115,25 @@ module.exports.CydiaCrawler = class CydiaCrawler extends process.EventEmitter
 					@emit "complete"
 		return @
 	_getRelease: (cb) =>
-		Cydia.getRelease @repo, wrap cb, (release) =>
+		releaseUrl = url.resolve buildRepoBaseUrl(@repo), "Release"
+		@logger.info "Attempting to download Release from #{releaseUrl}"
+		control = ControlParser get releaseUrl, true
+		release = null
+		control.once "stanza", (stanza) -> release = stanza
+		control.on "done", =>
 			return cb() unless release
+			@logger.info "Found a Release file."
+			@logger.trace {release: release}, "Release stanza."
 			@repo.label = release.label
 			@repo.description = release.description
 			@repo.save cb
 	_getPackages: (cb) =>
 		repo = @repo
-		Cydia.getPackages repo, wrap cb, (stream) =>
+		Cydia.getPackages @logger, repo, wrap cb, (stream) =>
 			@emit "start"
 
-			q = async.queue (job, cb) ->
+			q = async.queue (job, cb) =>
+				@logger.trace {stanza: job.data}, "Processing package."
 				Cydia.processPackage job.data, repo, cb
 			, 10
 
@@ -139,6 +141,7 @@ module.exports.CydiaCrawler = class CydiaCrawler extends process.EventEmitter
 
 			packagesDom.add stream
 			packagesDom.on "error", (err) =>
+				@logger.error warn, "Failed to process packages."
 				q.tasks = []
 				q.concurrency = 0
 				control.removeListener "stanza", stanzaHandler
@@ -152,11 +155,7 @@ module.exports.CydiaCrawler = class CydiaCrawler extends process.EventEmitter
 			stanzaHandler = (stanza) =>
 				totalStanzas++
 				q.push { data: stanza }, (err, pkg) =>
-					# TODO: log errors.
-					#console.error err if err?
 					if err
-						console.log "failed.", stanza
-						console.error err
 						err.pkg = pkg
 						throw err
 					return if err?
@@ -170,6 +169,7 @@ module.exports.CydiaCrawler = class CydiaCrawler extends process.EventEmitter
 					if q.running() then q.drain = cb else cb()
 				stream.on "download", (done, total) =>
 					@emit "download", done, total
+
 ###
 
 Cydia.queueCrawl = ->

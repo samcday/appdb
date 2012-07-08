@@ -23,7 +23,7 @@ control.on "stanza", (stanza) -> console.log stanza
 
 return
 ###
-
+###
 {CydiaCrawler} = Cydia = require "./lib/cydia"
 
 # crawler = new CydiaCrawler {}, "4fe6fbbf31581a35c53a2289"
@@ -64,3 +64,17 @@ crawler.on "package", (pkg, _done, _total) ->
 	printStatusLine()
 crawler.on "complete", ->
 	console.log "\n\n... all done!"
+###
+
+Jobs = require "./lib/jobs"
+Jobs.queueCydia()
+return
+
+log = require "./lib/log"
+Jobs.process "test", (job, done) ->
+	log = log.jobLogger job
+	log.info "Yay!"
+	done()
+
+job = Jobs.create "test"
+job.save()
