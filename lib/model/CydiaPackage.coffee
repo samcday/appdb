@@ -39,6 +39,8 @@ VersionSchema = new Schema
 		enum: ["required", "important", "standard", "optional", "extra"]
 	size:
 		type: Number
+	tags:
+		type: [String]
 
 VersionSchema.method "addRepo", (repo) ->
 	for repoId in @repositories
@@ -58,13 +60,17 @@ CydiaPackageSchema = new Schema
 CydiaPackageSchema.plugin timestamps
 
 CydiaPackageSchema.statics.findOrCreate = (bundleId, cb) ->
-	CydiaPackage = this.model "CydiaPackage"
+	CydiaPackage = @model "CydiaPackage"
 	pkg = new CydiaPackage bundleId: bundleId
 	pkg.save (err, pkg) ->
 		return cb err if err and err.code isnt 11000
 		CydiaPackage.findOne {bundleId: bundleId}, cb
 
 CydiaPackageSchema.methods.version = (version) ->
-	return _.detect this.versions, (ver) -> ver.number is version
+	return _.detect @versions, (ver) -> ver.number is version
+
+CydiaPackageSchema.methods.newVersion = (number) ->
+	@versions.push number: number
+	return @versions[@versions.length - 1]
 
 module.exports = mongoose.model "CydiaPackage", CydiaPackageSchema

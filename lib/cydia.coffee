@@ -62,17 +62,18 @@ Cydia.processPackage = (packageData, repo, cb) ->
 	CydiaPackage.findOrCreate packageData.Package, wrap cb, (pkg) ->
 		ver = pkg.version packageData.Version
 		if not ver
-			pkg.versions.push ver =
-				number: packageData.Version
-				repositories: [repo]
-				name: packageData.Name
-				description: packageData.description
-				section: packageData.Section
-				maintainer: parsePerson packageData.Maintainer
-				author: parsePerson packageData.Author
-				sponsor: parseSponsor packageData.Sponsor
-				priority: packageData.Priority
-				size: packageData.Size
+			ver = pkg.newVersion packageData.Version
+			ver.number = packageData.Version
+			ver.repositories = [repo]
+			ver.name = packageData.Name
+			ver.description = packageData.description
+			ver.section = packageData.Section
+			ver.maintainer = parsePerson packageData.Maintainer
+			ver.author = parsePerson packageData.Author
+			ver.sponsor = parseSponsor packageData.Sponsor
+			ver.priority = packageData.Priority if packageData.Priority
+			ver.size = packageData.Size
+			ver.tags.push tag.trim() for tag in packageData.Tag.split "," if packageData.Tag
 			# TODO: conflicts/replaces/etc
 		else
 			# Make sure this repository is listed for this version.
@@ -132,13 +133,14 @@ module.exports.CydiaCrawler = class CydiaCrawler extends process.EventEmitter
 		Cydia.getPackages @logger, repo, wrap cb, (stream) =>
 			@emit "start"
 
-			q = async.queue (job, cb) =>
-				@logger.trace {stanza: job.data}, "Processing package."
-				Cydia.processPackage job.data, repo, cb
-			, 10
+			q = null
+			control = null
+			totalStanzas = 0
+			processed = 0
+			foundAllStanzas = false
+			stanzaHandler = null
 
 			packagesDom = domain.create()
-
 			packagesDom.add stream
 			packagesDom.on "error", (err) =>
 				@logger.error warn, "Failed to process packages."
@@ -148,19 +150,21 @@ module.exports.CydiaCrawler = class CydiaCrawler extends process.EventEmitter
 				packagesDom.dispose()
 				@emit "error", err
 
-			control = null
-			totalStanzas = 0
-			processed = 0
-			foundAllStanzas = false
-			stanzaHandler = (stanza) =>
-				totalStanzas++
-				q.push { data: stanza }, (err, pkg) =>
-					if err
-						err.pkg = pkg
-						throw err
-					return if err?
-					@emit "package", pkg, ++processed, if foundAllStanzas then totalStanzas else 0
 			packagesDom.run =>
+				stanzaHandler = (stanza) =>
+					totalStanzas++
+					q.push { data: stanza }, (err, pkg) =>
+						if err
+							err.pkg = pkg
+							throw err
+						return if err?
+						@emit "package", pkg, ++processed, if foundAllStanzas then totalStanzas else 0
+				q = async.queue (job, cb) =>
+					@logger.trace {stanza: job.data}, "Processing package."
+					Cydia.processPackage job.data, repo, (err) =>
+						@logger.warn {err: err, stanza: job.data}, "Failed to process package." if err
+						cb()
+				, 10
 				control = ControlParser stream
 				control.on "stanza", stanzaHandler
 				control.on "done", =>

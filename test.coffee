@@ -1,3 +1,13 @@
+###CydiaPackage = require "./lib/model/CydiaPackage"
+
+pkg = new CydiaPackage
+
+console.log ver = pkg.newVersion "1.0"
+console.log pkg
+
+return
+###
+
 ###
 request = require "request"
 util = require "./lib/util"
